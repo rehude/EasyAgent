@@ -2,7 +2,15 @@ import readline from "node:readline/promises";
 import pc from "picocolors";
 import { agentRun } from "./agent.js";
 import { SYSTEM_PROMPT } from "./prompts.js";
+import { registerTool } from "./tools/index.js";
+import { readFile } from "./tools/readFile.js";
+import { writeFile } from "./tools/writeFile.js";
+import { shell } from "./tools/shell.js";
 import type OpenAI from "openai";
+
+registerTool(readFile);
+registerTool(writeFile);
+registerTool(shell);
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const history: OpenAI.ChatCompletionMessageParam[] = [
