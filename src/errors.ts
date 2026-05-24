@@ -14,10 +14,10 @@ export function formatApiError(err: unknown): string {
     return `请求参数错误 (400):${err.message}`;
   }
   if (err instanceof OpenAI.NotFoundError) {
-    return `资源未找到 (404):请确认 DEEPSEEK_MODEL 或 BASE_URL 配置`;
+    return `资源未找到 (404):请确认 DEEPSEEK_MODEL 或 LLM_BASE_URL 配置`;
   }
   if (err instanceof OpenAI.APIConnectionTimeoutError) {
-    return "网络超时:无法连接到 LLM endpoint,请检查网络或 BASE_URL 配置";
+    return "网络超时:无法连接到 LLM endpoint,请检查网络或 LLM_BASE_URL 配置";
   }
   if (err instanceof OpenAI.APIConnectionError) {
     return `网络异常:${err.message}`;

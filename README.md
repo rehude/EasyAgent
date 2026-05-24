@@ -31,7 +31,7 @@ pnpm add -g rehudex
 |---|---|
 | `<当前目录>/.env` | 项目内私有配置(覆盖全局) |
 | `~/.rehudex/.env` | **全局配置,推荐**,一次配好所有项目共用 |
-| 系统环境变量 | shell `export` 的 `DEEPSEEK_API_KEY` 等(`DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` 变量名沿用历史命名,实际指向哪家由 `BASE_URL` 决定) |
+| 系统环境变量 | shell `export` 的 `DEEPSEEK_API_KEY` 等(`DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` 变量名沿用历史命名,实际指向哪家由 `LLM_BASE_URL` 决定) |
 
 **全局一次性配置(推荐):**
 
@@ -61,7 +61,7 @@ DEEPSEEK_API_KEY=sk-xxxxxxxx
 #   小米 mimo      → https://token-plan-cn.xiaomimimo.com/anthropic
 #   智谱 GLM       → https://open.bigmodel.cn/api/paas/v4
 #   本地 Ollama    → http://127.0.0.1:11434/v1
-BASE_URL=https://api.deepseek.com
+LLM_BASE_URL=https://api.deepseek.com
 
 # 可选:模型名(默认 deepseek-chat,按 endpoint 换)
 DEEPSEEK_MODEL=deepseek-chat

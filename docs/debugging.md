@@ -51,7 +51,7 @@ export NODE_EXTRA_CA_CERTS="/path/to/reqable-ca.crt"
 rehudex
 ```
 
-启动时看到 `[proxy] enabled via http://127.0.0.1:8888` 说明代理已挂上。问一句话,抓包工具里应能看到一条 `POST .../chat/completions` 请求(域名取决于你 `.env` 里 `BASE_URL` 配的是哪家)。
+启动时看到 `[proxy] enabled via http://127.0.0.1:8888` 说明代理已挂上。问一句话,抓包工具里应能看到一条 `POST .../chat/completions` 请求(域名取决于你 `.env` 里 `LLM_BASE_URL` 配的是哪家)。
 
 > ⚠️ 环境变量**只对当前终端窗口有效**,新开窗口要重新设。可以做成 `dev-proxy.ps1` / `dev-proxy.bat` 一键脚本。
 
