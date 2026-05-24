@@ -4,6 +4,7 @@ import pc from "picocolors";
 import { SessionStore } from "./session.js";
 import { renderHistory } from "./render.js";
 import { copyToClipboard } from "./clipboard.js";
+import { editInExternal } from "./editor.js";
 import type OpenAI from "openai";
 
 export interface CommandContext {
@@ -17,7 +18,9 @@ export interface SlashCommand {
   name: string;
   description: string;
   usage?: string;
-  run(args: string, ctx: CommandContext): Promise<void> | void;
+  // 返回 string → 主循环把它当成本轮 user 输入(走 expandAtRefs + agentRun)
+  // 返回 void / undefined → 命令自己处理完了
+  run(args: string, ctx: CommandContext): Promise<string | void> | string | void;
 }
 
 const registry = new Map<string, SlashCommand>();
@@ -112,7 +115,7 @@ registerCommand({
       const head = (c.usage ?? `/${c.name}`).padEnd(colWidth);
       console.log(`  ${pc.green(head)}${c.description}`);
     }
-    console.log(pc.dim("提示: 输入 / 后按 Tab 可补全命令名;输入 @ 后按 Tab 可补全文件路径;以 ! 开头直接执行 shell。"));
+    console.log(pc.dim("提示: 输入 / 后按 Tab 可补全命令名;输入 @ 后按 Tab 可补全文件路径;以 ! 开头直接执行 shell;行尾打 \\ 回车可多行续写。"));
   },
 });
 
@@ -270,6 +273,24 @@ registerCommand({
       console.log(pc.cyan(`已复制最近一条回答 (${text.length} 字符)`));
     } catch (e: any) {
       console.log(pc.red(`剪贴板写入失败: ${e.message}`));
+    }
+  },
+});
+
+registerCommand({
+  name: "edit",
+  description: "在 $EDITOR 中编辑长输入并发送",
+  usage: "/edit",
+  async run() {
+    try {
+      const content = await editInExternal();
+      if (!content) {
+        console.log(pc.dim("(空输入,已取消)"));
+        return;
+      }
+      return content; // 主循环把它当本轮 user 输入,走 expandAtRefs + agentRun
+    } catch (e: any) {
+      console.log(pc.red(`编辑器启动失败: ${e.message}`));
     }
   },
 });
