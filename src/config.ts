@@ -14,7 +14,7 @@ dotenv.config({
 
 export const CFG = {
   apiKey: process.env.DEEPSEEK_API_KEY!,
-  baseURL: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
+  baseURL: process.env.BASE_URL ?? "https://api.deepseek.com",
   model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
   maxIterations: 39,
 };

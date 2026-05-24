@@ -17,7 +17,7 @@ export function formatApiError(err: unknown): string {
     return `资源未找到 (404):请确认 DEEPSEEK_MODEL 或 BASE_URL 配置`;
   }
   if (err instanceof OpenAI.APIConnectionTimeoutError) {
-    return "网络超时:无法连接到 DeepSeek API,请检查网络";
+    return "网络超时:无法连接到 LLM endpoint,请检查网络或 BASE_URL 配置";
   }
   if (err instanceof OpenAI.APIConnectionError) {
     return `网络异常:${err.message}`;

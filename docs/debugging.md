@@ -1,6 +1,6 @@
 # 调试 / 抓包
 
-想用 Reqable / Fiddler / mitmproxy / Charles 抓到程序与 DeepSeek 之间的 HTTP 请求,需要两件事:
+想用 Reqable / Fiddler / mitmproxy / Charles 抓到程序与 LLM endpoint 之间的 HTTP 请求,需要两件事:
 
 1. **让 Node 走代理**:`rehudex` 内置 [src/proxy.ts](../src/proxy.ts),启动时若检测到 `HTTPS_PROXY` / `HTTP_PROXY`,自动挂上 undici `EnvHttpProxyAgent`,无需额外脚本。
 2. **让 Node 信任抓包工具的根证书**:用 `NODE_EXTRA_CA_CERTS` 指向导出的 CA 文件(PEM 格式)。
@@ -51,7 +51,7 @@ export NODE_EXTRA_CA_CERTS="/path/to/reqable-ca.crt"
 rehudex
 ```
 
-启动时看到 `[proxy] enabled via http://127.0.0.1:8888` 说明代理已挂上。问一句话,抓包工具里应能看到 `POST https://api.deepseek.com/v1/chat/completions`。
+启动时看到 `[proxy] enabled via http://127.0.0.1:8888` 说明代理已挂上。问一句话,抓包工具里应能看到一条 `POST .../chat/completions` 请求(域名取决于你 `.env` 里 `BASE_URL` 配的是哪家)。
 
 > ⚠️ 环境变量**只对当前终端窗口有效**,新开窗口要重新设。可以做成 `dev-proxy.ps1` / `dev-proxy.bat` 一键脚本。
 

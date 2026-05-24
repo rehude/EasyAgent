@@ -1,6 +1,8 @@
 # rehudex
 
-一个跑在终端的命令行 AI 助手,基于 DeepSeek 大模型,具备流式输出、Markdown 富文本渲染、工具调用闭环能力。
+一个跑在终端的命令行 AI 助手,对接**任意兼容 OpenAI SDK 的 LLM endpoint**(DeepSeek、小米 mimo、智谱、Moonshot、本地 vLLM/Ollama 等),具备流式输出、Markdown 富文本渲染、工具调用闭环能力。
+
+📦 已发布到 npm:<https://www.npmjs.com/package/rehudex>
 
 ## 特性
 
@@ -8,7 +10,7 @@
 - 🎨 **终端 Markdown 富文本**:基于 [md4x](https://www.npmjs.com/package/md4x) 实时渲染标题/加粗/代码块等
 - 🛠 **工具调用闭环**:Agent 主循环自动多轮调用工具直到任务完成
 - 🔒 **沙箱保护**:文件操作限制在工作目录内,写文件 / 执行 shell 需用户确认
-- 💬 **DeepSeek 思考模式兼容**:保留 `reasoning_content` 字段供 round-trip 使用
+- 💬 **思考模式兼容**:保留 `reasoning_content` 字段供 round-trip 使用(DeepSeek-R1 / OpenAI o 系列等)
 - 💾 **会话持久化**:每条消息追加写入 JSONL,按项目 cwd 隔离,支持 `-c` 续接与 `/load` 跳转
 
 ## 安装
@@ -29,7 +31,7 @@ pnpm add -g rehudex
 |---|---|
 | `<当前目录>/.env` | 项目内私有配置(覆盖全局) |
 | `~/.rehudex/.env` | **全局配置,推荐**,一次配好所有项目共用 |
-| 系统环境变量 | shell `export` 的 `DEEPSEEK_API_KEY` 等 |
+| 系统环境变量 | shell `export` 的 `DEEPSEEK_API_KEY` 等(`DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` 变量名沿用历史命名,实际指向哪家由 `BASE_URL` 决定) |
 
 **全局一次性配置(推荐):**
 
@@ -47,15 +49,25 @@ New-Item -ItemType Directory -Force -Path "$HOME\.rehudex" | Out-Null
 "DEEPSEEK_API_KEY=sk-xxxxxxxx" | Out-File -Encoding utf8 "$HOME\.rehudex\.env"
 ```
 
-完整可选字段:
+完整可选字段(`DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` 两个名字是历史遗留,实际可指向任意 OpenAI 兼容 endpoint):
 
 ```
+# 必填:API Key
 DEEPSEEK_API_KEY=sk-xxxxxxxx
-DEEPSEEK_BASE_URL=https://api.deepseek.com   # 可选,默认为官方地址
-DEEPSEEK_MODEL=deepseek-chat                 # 可选,默认 deepseek-chat
+
+# 可选:endpoint(默认 https://api.deepseek.com)
+# 示例:
+#   DeepSeek 官方  → https://api.deepseek.com
+#   小米 mimo      → https://token-plan-cn.xiaomimimo.com/anthropic
+#   智谱 GLM       → https://open.bigmodel.cn/api/paas/v4
+#   本地 Ollama    → http://127.0.0.1:11434/v1
+BASE_URL=https://api.deepseek.com
+
+# 可选:模型名(默认 deepseek-chat,按 endpoint 换)
+DEEPSEEK_MODEL=deepseek-chat
 ```
 
-申请 API Key:<https://platform.deepseek.com/>
+只要你的 LLM 服务实现了 OpenAI Chat Completions 协议(`/chat/completions` + tool calling),就能直接对接。
 
 ## 启动
 
@@ -123,7 +135,7 @@ REPL 内置命令:
 src/
 ├── index.ts        # REPL 入口 + 启动参数 / 斜杠命令分发
 ├── agent.ts        # 多轮 tool_call Agent 主循环
-├── llm.ts          # OpenAI SDK 封装(指向 DeepSeek)
+├── llm.ts          # OpenAI SDK 封装(指向任意兼容 endpoint)
 ├── session.ts      # 会话持久化(JSONL append-only)
 ├── render.ts       # 流式 Markdown 终端渲染
 ├── prompts.ts      # 系统提示词
@@ -149,15 +161,10 @@ pnpm start      # 运行编译产物
 
 ## 发布到 npm
 
-```bash
-pnpm build              # prepublishOnly 也会自动跑
-npm publish             # 已登录 npm 后,一条命令发布
-```
-
-`package.json` 的 `files` 字段限定只打 `dist/` 和 `README.md`,不会带 `src/`、`.env` 出去。发布前可用 `npm pack` 干跑一遍验证。
+见 [docs/publishing.md](docs/publishing.md)。包含首次准备(npm login + 2FA)、每次发版流程(`npm version` / `npm publish` + OTP)、`files` 字段说明、常见报错排查。
 
 ## 调试 / 抓包
 
-想用 Reqable / Fiddler / mitmproxy / Charles 抓到程序与 DeepSeek 之间的 HTTP 请求,见 [docs/debugging.md](docs/debugging.md)。
+想用 Reqable / Fiddler / mitmproxy / Charles 抓到程序与 LLM endpoint 之间的 HTTP 请求,见 [docs/debugging.md](docs/debugging.md)。
 
 简要:设置 `HTTPS_PROXY` 与 `NODE_EXTRA_CA_CERTS` 两个环境变量,然后正常启动 `rehudex`(或 `pnpm dev`)即可。代理支持已内置在 `src/proxy.ts`。
