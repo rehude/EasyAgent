@@ -86,9 +86,10 @@ if (!process.stdout.isTTY && uiType !== "classic") {
   console.warn(pc.yellow(`⚠ 非交互终端下不支持 Ink UI，强制改用 classic`));
 }
 
-const ui = createUiAdapter(effectiveUiType);
+const ui = await createUiAdapter(effectiveUiType);
 setCurrentUi(ui);
-const rl = getRL(buildCompleter());
+// classic UI 复用 readline,Ink 自己接管 stdin 因此跳过 getRL
+const rl = effectiveUiType === "classic" ? getRL(buildCompleter()) : null;
 
 const systemMsg: OpenAI.ChatCompletionMessageParam = {
   role: "system",
@@ -141,10 +142,15 @@ const shutdown = (code = 0) => {
   process.exit(code);
 };
 
-rl.on("SIGINT", () => shutdown(0));
-rl.on("close", () => {
-  if (!closed) shutdown(0);
-});
+if (rl) {
+  rl.on("SIGINT", () => shutdown(0));
+  rl.on("close", () => {
+    if (!closed) shutdown(0);
+  });
+} else {
+  // Ink 模式:用 process 信号兜底
+  process.on("SIGINT", () => shutdown(0));
+}
 
 console.log(pc.cyan("rehudex v0.4 — 输入 exit 或按 Ctrl+C 退出"));
 console.log(pc.dim(`UI: ${effectiveUiType} | 提示: / 命令(Tab 补全) | @文件 引用 | !cmd 直接 shell | 行尾 \\ 续行 | /edit 长输入 | /help 查看全部`));

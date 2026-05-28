@@ -338,11 +338,15 @@ registerCommand({
     const input = [...ctx.history, ask];
 
     ctx.ui.emit({ type: "info", data: "[摘要]" });
-    const renderer = createStreamRenderer();
+    const renderer = ctx.ui.ownsStreamRendering ? null : createStreamRenderer();
     let total: Usage | null = null;
     try {
-      const { message, usage } = await chatStream(input, undefined, (t) => renderer.write(t));
-      renderer.finish();
+      const { message, usage } = await chatStream(input, undefined, (t) => {
+        if (renderer) renderer.write(t);
+        else ctx.ui.emit({ type: "assistantDelta", data: t });
+      });
+      if (renderer) renderer.finish();
+      else ctx.ui.emit({ type: "assistantDone" });
       total = usage;
       const summary = typeof message.content === "string" ? message.content : "";
       if (!summary.trim()) {
@@ -367,7 +371,7 @@ registerCommand({
           (total ? `,本次摘要消耗 ${total.total} tokens` : ""),
       });
     } catch (err) {
-      renderer.reset();
+      if (renderer) renderer.reset();
       ctx.ui.emit({ type: "error", data: `✖ 摘要失败: ${formatApiError(err)}` });
     }
   },

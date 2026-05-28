@@ -1,0 +1,247 @@
+import React, { useEffect, useState, useRef } from "react";
+import { Box, Text, useInput, useApp } from "ink";
+import { renderToAnsi } from "md4x";
+import type OpenAI from "openai";
+import type { UiEvent } from "../types.js";
+import { getInkBus } from "./event-bus.js";
+import {
+  type MessageBlock,
+  newBlockId,
+  messagesToBlocks,
+  MessageBlockView,
+} from "./blocks.js";
+
+interface PendingInput {
+  prompt: string;
+  resolve: (value: string) => void;
+}
+interface PendingConfirm {
+  msg: string;
+  resolve: (value: boolean) => void;
+}
+
+export function App(): React.ReactElement {
+  const { exit } = useApp();
+  const bus = getInkBus();
+
+  const [blocks, setBlocks] = useState<MessageBlock[]>([]);
+  const [streaming, setStreaming] = useState<string>("");
+  const [reasoning, setReasoning] = useState<string>("");
+  const [statusLine, setStatusLine] = useState<string>("");
+  const [busy, setBusy] = useState<boolean>(false);
+
+  const [inputBuffer, setInputBuffer] = useState<string>("");
+  const [continuationLines, setContinuationLines] = useState<string[]>([]);
+  const [pendingInput, setPendingInput] = useState<PendingInput | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+
+  const streamingRef = useRef<string>("");
+  const reasoningRef = useRef<string>("");
+
+  useEffect(() => {
+    const onUi = (event: UiEvent) => {
+      switch (event.type) {
+        case "status":
+          setStatusLine(event.data);
+          break;
+        case "info":
+          setBlocks((b) => [...b, { id: newBlockId(), role: "info", text: event.data }]);
+          break;
+        case "warning":
+          setBlocks((b) => [...b, { id: newBlockId(), role: "warning", text: event.data }]);
+          break;
+        case "error":
+          setBlocks((b) => [...b, { id: newBlockId(), role: "error", text: event.data }]);
+          break;
+        case "userMessage":
+          setBlocks((b) => [...b, { id: newBlockId(), role: "user", text: event.data }]);
+          break;
+        case "assistantStart":
+          streamingRef.current = "";
+          setStreaming("");
+          setBusy(true);
+          break;
+        case "assistantDelta":
+          streamingRef.current += event.data;
+          setStreaming(streamingRef.current);
+          break;
+        case "assistantDone": {
+          const text = streamingRef.current;
+          streamingRef.current = "";
+          setStreaming("");
+          setBusy(false);
+          if (text) setBlocks((b) => [...b, { id: newBlockId(), role: "assistant", text }]);
+          break;
+        }
+        case "reasoningStart":
+          reasoningRef.current = "";
+          setReasoning("");
+          setBusy(true);
+          break;
+        case "reasoningDelta":
+          reasoningRef.current += event.data;
+          setReasoning(reasoningRef.current);
+          break;
+        case "reasoningDone":
+          reasoningRef.current = "";
+          setReasoning("");
+          break;
+        case "toolCall":
+          setBlocks((b) => [
+            ...b,
+            {
+              id: newBlockId(),
+              role: "tool",
+              toolName: event.data.name,
+              text: `⚙ ${event.data.name}(${event.data.arguments})`,
+            },
+          ]);
+          break;
+        case "shellStart":
+          setBlocks((b) => [
+            ...b,
+            { id: newBlockId(), role: "shell", text: `⚙ ${event.data.shell} $ ${event.data.cmd}` },
+          ]);
+          break;
+        case "shellOutput": {
+          const parts: string[] = [];
+          if (event.data.stdout) parts.push(event.data.stdout.replace(/\n+$/, ""));
+          if (event.data.stderr) parts.push(event.data.stderr.replace(/\n+$/, ""));
+          if (event.data.error) parts.push(`命令异常: ${event.data.error}`);
+          if (parts.length)
+            setBlocks((b) => [...b, { id: newBlockId(), role: "shell", text: parts.join("\n") }]);
+          break;
+        }
+        case "shellDone":
+          break;
+      }
+    };
+    const onHistory = (messages: OpenAI.ChatCompletionMessageParam[]) => {
+      setBlocks(messagesToBlocks(messages));
+    };
+    const onAskInput = (payload: PendingInput) => {
+      setPendingInput(payload);
+      setInputBuffer("");
+      setContinuationLines([]);
+    };
+    const onAskConfirm = (payload: PendingConfirm) => {
+      setPendingConfirm(payload);
+    };
+
+    bus.on("ui", onUi);
+    bus.on("history", onHistory);
+    bus.on("askInput", onAskInput);
+    bus.on("askConfirm", onAskConfirm);
+    return () => {
+      bus.off("ui", onUi);
+      bus.off("history", onHistory);
+      bus.off("askInput", onAskInput);
+      bus.off("askConfirm", onAskConfirm);
+    };
+  }, [bus]);
+
+  // 输入处理
+  useInput((input, key) => {
+    // 优先级最高:确认提示
+    if (pendingConfirm) {
+      if (input === "y" || input === "Y") {
+        const p = pendingConfirm;
+        setPendingConfirm(null);
+        p.resolve(true);
+      } else if (input === "n" || input === "N" || key.return || key.escape) {
+        const p = pendingConfirm;
+        setPendingConfirm(null);
+        p.resolve(false);
+      }
+      return;
+    }
+
+    if (!pendingInput) return;
+
+    if (key.ctrl && input === "c") {
+      exit();
+      return;
+    }
+    if (key.return) {
+      // 行尾 \ 续写
+      if (inputBuffer.endsWith("\\")) {
+        setContinuationLines((arr) => [...arr, inputBuffer.slice(0, -1)]);
+        setInputBuffer("");
+        return;
+      }
+      const lines = [...continuationLines, inputBuffer];
+      const full = lines.join("\n");
+      const p = pendingInput;
+      setPendingInput(null);
+      setInputBuffer("");
+      setContinuationLines([]);
+      p.resolve(full);
+      return;
+    }
+    if (key.backspace || key.delete) {
+      if (inputBuffer.length > 0) {
+        setInputBuffer((s) => s.slice(0, -1));
+      } else if (continuationLines.length > 0) {
+        const last = continuationLines[continuationLines.length - 1];
+        setContinuationLines((arr) => arr.slice(0, -1));
+        setInputBuffer(last);
+      }
+      return;
+    }
+    if (input && !key.ctrl && !key.meta) {
+      setInputBuffer((s) => s + input);
+    }
+  });
+
+  return (
+    <Box flexDirection="column">
+      {/* 状态栏 */}
+      {statusLine ? (
+        <Box>
+          <Text color="cyan" dimColor>{statusLine}</Text>
+        </Box>
+      ) : null}
+
+      {/* 消息块 */}
+      {blocks.map((b) => (
+        <MessageBlockView key={b.id} b={b} />
+      ))}
+
+      {/* 思考中(reasoning) */}
+      {reasoning ? (
+        <Box marginTop={1}>
+          <Text color="gray">[思考] {reasoning}</Text>
+        </Box>
+      ) : null}
+
+      {/* 流式回复 */}
+      {streaming ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="cyan">[回答]</Text>
+          <Text>{renderToAnsi(streaming)}</Text>
+        </Box>
+      ) : null}
+
+      {/* 确认提示 */}
+      {pendingConfirm ? (
+        <Box marginTop={1}>
+          <Text color="yellow">{pendingConfirm.msg} (y/N) </Text>
+        </Box>
+      ) : null}
+
+      {/* 输入框 */}
+      {pendingInput && !pendingConfirm ? (
+        <Box flexDirection="column" marginTop={1}>
+          {continuationLines.map((line, i) => (
+            <Text key={i} color="gray">  {line}\</Text>
+          ))}
+          <Box>
+            <Text color="green">{busy ? "..." : pendingInput.prompt}</Text>
+            <Text>{inputBuffer}</Text>
+            <Text color="gray">{"▏"}</Text>
+          </Box>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}

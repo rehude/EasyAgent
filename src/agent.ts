@@ -7,6 +7,13 @@ import { SessionStore } from "./session.js";
 import pc from "picocolors";
 import type OpenAI from "openai";
 import type { UiAdapter } from "./ui/index.js";
+import type { StreamRenderer } from "./ui/types.js";
+
+const NOOP_RENDERER: StreamRenderer = {
+  write: () => {},
+  finish: () => {},
+  reset: () => {},
+};
 
 export interface AgentRunResult {
   usage: Usage;
@@ -26,7 +33,11 @@ export async function agentRun(
   history.push(userMsg);
   store.append(userMsg);
 
-  const renderer = createStreamRenderer();
+  // adapter 自己接管流式渲染时(例如 Ink),不再使用 createStreamRenderer
+  // 避免直接写 stdout 与 TUI 冲突
+  const renderer: StreamRenderer = ui.ownsStreamRendering
+    ? NOOP_RENDERER
+    : createStreamRenderer();
   const total: Usage = { prompt: 0, completion: 0, total: 0 };
 
   try {

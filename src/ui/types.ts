@@ -134,6 +134,10 @@ export interface UiAdapter {
   // 暂停/恢复 UI 渲染（例如运行外部程序或编辑器时）
   suspend(): Promise<void>;
   resume(): Promise<void>;
+
+  // 可选:adapter 自己负责流式输出渲染时返回 true
+  // 此时 agent.ts 不再调用 createStreamRenderer 写 stdout(避免与 Ink 等 TUI 冲突)
+  ownsStreamRendering?: boolean;
 }
 
 export interface StreamRenderer {
