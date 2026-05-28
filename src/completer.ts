@@ -3,6 +3,7 @@ import { readFile as fsRead } from "node:fs/promises";
 import pc from "picocolors";
 import { safePath } from "./tools/safePath.js";
 import { allCommands } from "./commands.js";
+import { listSkills } from "./skills.js";
 
 type CompleterResult = [string[], string];
 
@@ -37,6 +38,14 @@ export function buildCompleter(): (line: string) => CompleterResult {
   return (line: string): CompleterResult => {
     const m = line.match(/(\S*)$/);
     const word = m?.[1] ?? "";
+
+    if (/^\/skill\s+\S*$/.test(line)) {
+      const hits = listSkills()
+        .map((s) => s.name)
+        .filter((n) => n.startsWith(word))
+        .sort();
+      return [hits, word];
+    }
 
     if (word.startsWith("/") && !word.slice(1).includes("/")) {
       const prefix = word.slice(1);

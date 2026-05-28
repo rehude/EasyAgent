@@ -7,7 +7,9 @@ import { copyToClipboard } from "./clipboard.js";
 import { editInExternal } from "./editor.js";
 import { chatStream, type Usage } from "./llm.js";
 import { formatApiError } from "./errors.js";
+import { listSkills, getSkill, loadSkills } from "./skills.js";
 import type OpenAI from "openai";
+import type { UiAdapter } from "./ui/index.js";
 
 export interface SessionUsage {
   prompt: number;
@@ -20,6 +22,7 @@ export interface CommandContext {
   store: SessionStore;
   systemMsg: OpenAI.ChatCompletionMessageParam;
   sessionUsage: SessionUsage;
+  ui: UiAdapter;
   setStore(s: SessionStore): void;
 }
 
@@ -55,25 +58,25 @@ registerCommand({
     ctx.history.length = 0;
     ctx.history.push(ctx.systemMsg);
     store.append(ctx.systemMsg);
-    console.log(pc.cyan(`新会话 ${store.id.slice(0, 8)}`));
-    console.log(pc.dim(`session: ${store.file}`));
+    ctx.ui.emit({ type: "info", data: `新会话 ${store.id.slice(0, 8)}` });
+    ctx.ui.emit({ type: "status", data: `session: ${store.file}` });
   },
 });
 
 registerCommand({
   name: "list",
   description: "列出本项目下所有历史会话",
-  run() {
+  run(_args, ctx) {
     const sessions = SessionStore.list();
     if (sessions.length === 0) {
-      console.log(pc.dim("(无历史)"));
+      ctx.ui.emit({ type: "info", data: "(无历史)" });
       return;
     }
+    const lines: string[] = [];
     for (const s of sessions) {
-      console.log(
-        `${pc.green(s.id.slice(0, 8))}  ${s.mtime.toLocaleString()}  ${pc.dim(s.preview)}`,
-      );
+      lines.push(`${s.id.slice(0, 8)}  ${s.mtime.toLocaleString()}  ${s.preview}`);
     }
+    ctx.ui.emit({ type: "info", data: lines.join("\n") });
   },
 });
 
@@ -84,7 +87,7 @@ registerCommand({
   run(args, ctx) {
     const id = args.trim();
     if (!id) {
-      console.log(pc.red("用法: /load <id前8位>"));
+      ctx.ui.emit({ type: "error", data: "用法: /load <id前8位>" });
       return;
     }
     try {
@@ -92,12 +95,13 @@ registerCommand({
       ctx.setStore(loaded.store);
       ctx.history.length = 0;
       ctx.history.push(...loaded.messages);
-      console.log(
-        pc.cyan(`已加载 ${loaded.store.id.slice(0, 8)} (${ctx.history.length} 条)`),
-      );
-      renderHistory(ctx.history);
+      ctx.ui.emit({
+        type: "info",
+        data: `已加载 ${loaded.store.id.slice(0, 8)} (${ctx.history.length} 条)`,
+      });
+      ctx.ui.renderHistory(ctx.history);
     } catch (e: any) {
-      console.log(pc.red(e.message));
+      ctx.ui.emit({ type: "error", data: e.message });
     }
   },
 });
@@ -108,23 +112,25 @@ registerCommand({
   run(_args, ctx) {
     ctx.history.length = 0;
     ctx.history.push(ctx.systemMsg);
-    console.log(pc.cyan("已清空上下文"));
+    ctx.ui.emit({ type: "info", data: "已清空上下文" });
   },
 });
 
 registerCommand({
   name: "help",
   description: "显示本帮助",
-  run() {
+  run(_args, ctx) {
     const cmds = allCommands();
     const widths = cmds.map((c) => (c.usage ?? `/${c.name}`).length);
     const colWidth = Math.max(...widths, 8) + 2;
-    console.log(pc.cyan("可用命令:"));
+    const lines: string[] = ["可用命令:"];
     for (const c of cmds) {
       const head = (c.usage ?? `/${c.name}`).padEnd(colWidth);
-      console.log(`  ${pc.green(head)}${c.description}`);
+      lines.push(`  ${head}${c.description}`);
     }
-    console.log(pc.dim("提示: 输入 / 后按 Tab 可补全命令名;输入 @ 后按 Tab 可补全文件路径;以 ! 开头直接执行 shell;行尾打 \\ 回车可多行续写。"));
+    lines.push("");
+    lines.push("提示: 输入 / 后按 Tab 可补全命令名;输入 @ 后按 Tab 可补全文件路径;以 ! 开头直接执行 shell;行尾打 \\ 回车可多行续写。");
+    ctx.ui.emit({ type: "info", data: lines.join("\n") });
   },
 });
 
@@ -261,9 +267,9 @@ registerCommand({
     try {
       const md = serializeHistory(ctx.history, ctx.store);
       writeFileSync(file, md, "utf8");
-      console.log(pc.cyan(`已导出 → ${file}`));
+      ctx.ui.emit({ type: "info", data: `已导出 → ${file}` });
     } catch (e: any) {
-      console.log(pc.red(`导出失败: ${e.message}`));
+      ctx.ui.emit({ type: "error", data: `导出失败: ${e.message}` });
     }
   },
 });
@@ -274,14 +280,17 @@ registerCommand({
   async run(_args, ctx) {
     const text = lastAssistantText(ctx.history);
     if (!text) {
-      console.log(pc.yellow("没有可复制的回答"));
+      ctx.ui.emit({ type: "warning", data: "没有可复制的回答" });
       return;
     }
     try {
       await copyToClipboard(text);
-      console.log(pc.cyan(`已复制最近一条回答 (${text.length} 字符)`));
+      ctx.ui.emit({
+        type: "info",
+        data: `已复制最近一条回答 (${text.length} 字符)`,
+      });
     } catch (e: any) {
-      console.log(pc.red(`剪贴板写入失败: ${e.message}`));
+      ctx.ui.emit({ type: "error", data: `剪贴板写入失败: ${e.message}` });
     }
   },
 });
@@ -290,16 +299,19 @@ registerCommand({
   name: "edit",
   description: "在 $EDITOR 中编辑长输入并发送",
   usage: "/edit",
-  async run() {
+  async run(_args, ctx) {
     try {
+      await ctx.ui.suspend();
       const content = await editInExternal();
+      await ctx.ui.resume();
       if (!content) {
-        console.log(pc.dim("(空输入,已取消)"));
+        ctx.ui.emit({ type: "info", data: "(空输入,已取消)" });
         return;
       }
-      return content; // 主循环把它当本轮 user 输入,走 expandAtRefs + agentRun
+      return content;
     } catch (e: any) {
-      console.log(pc.red(`编辑器启动失败: ${e.message}`));
+      await ctx.ui.resume();
+      ctx.ui.emit({ type: "error", data: `编辑器启动失败: ${e.message}` });
     }
   },
 });
@@ -316,27 +328,25 @@ registerCommand({
   description: "用 LLM 摘要当前上下文,压缩 history(JSONL 文件保留完整原始记录)",
   async run(_args, ctx) {
     if (ctx.history.length <= 1) {
-      console.log(pc.dim("(空对话,无需压缩)"));
+      ctx.ui.emit({ type: "info", data: "(空对话,无需压缩)" });
       return;
     }
-    // 准备 LLM 输入:保留 systemMsg + 现有 history(除 system) + 摘要要求
     const ask: OpenAI.ChatCompletionMessageParam = {
       role: "user",
       content: COMPACT_PROMPT,
     };
     const input = [...ctx.history, ask];
 
-    console.log(pc.cyan("[摘要]"));
+    ctx.ui.emit({ type: "info", data: "[摘要]" });
     const renderer = createStreamRenderer();
     let total: Usage | null = null;
     try {
       const { message, usage } = await chatStream(input, undefined, (t) => renderer.write(t));
       renderer.finish();
       total = usage;
-      const summary =
-        typeof message.content === "string" ? message.content : "";
+      const summary = typeof message.content === "string" ? message.content : "";
       if (!summary.trim()) {
-        console.log(pc.yellow("(模型未返回摘要,放弃压缩)"));
+        ctx.ui.emit({ type: "warning", data: "(模型未返回摘要,放弃压缩)" });
         return;
       }
       const before = ctx.history.length;
@@ -344,24 +354,83 @@ registerCommand({
         role: "user",
         content: `[历史摘要]\n${summary}`,
       };
-      // 截断内存 history,JSONL 文件保留原始记录;摘要也 append 到 store
       ctx.history.length = 0;
       ctx.history.push(ctx.systemMsg, summaryMsg);
       ctx.store.append(summaryMsg);
-      // 重置累计 usage(摘要后的新一轮 prompt_tokens 会重新计算)
       ctx.sessionUsage.prompt = 0;
       ctx.sessionUsage.completion = 0;
       ctx.sessionUsage.total = 0;
-      console.log(
-        pc.cyan(
+      ctx.ui.emit({
+        type: "info",
+        data:
           `已压缩:${before} 条 → 2 条;摘要 ${summary.length} 字符` +
-            (total ? `,本次摘要消耗 ${total.total} tokens` : ""),
-        ),
-      );
+          (total ? `,本次摘要消耗 ${total.total} tokens` : ""),
+      });
     } catch (err) {
       renderer.reset();
-      console.log(pc.red(`✖ 摘要失败: ${formatApiError(err)}`));
+      ctx.ui.emit({ type: "error", data: `✖ 摘要失败: ${formatApiError(err)}` });
     }
+  },
+});
+
+registerCommand({
+  name: "skills",
+  description: "列出所有可用 skill",
+  run(_args, ctx) {
+    const list = listSkills();
+    if (list.length === 0) {
+      ctx.ui.emit({
+        type: "info",
+        data: "(无 skill)。可在 ~/.rehudex/skills/、./.rehudex/skills/、./.claude/skills/ 下创建 <name>/SKILL.md",
+      });
+      return;
+    }
+    const lines = list.map(
+      (s) => `  /skill ${s.name}  [${s.source}]  ${s.description || "(无描述)"}`,
+    );
+    ctx.ui.emit({ type: "info", data: `可用 skill (${list.length}):\n${lines.join("\n")}` });
+  },
+});
+
+registerCommand({
+  name: "skill",
+  description: "调用某个 skill,把 SKILL.md 注入对话",
+  usage: "/skill <name> | /skill list | /skill reload",
+  run(args, ctx) {
+    const name = args.trim();
+    if (!name || name === "list") {
+      const list = listSkills();
+      if (list.length === 0) {
+        ctx.ui.emit({
+          type: "info",
+          data: "(无 skill)。可在 ~/.rehudex/skills/、./.rehudex/skills/、./.claude/skills/ 下创建 <name>/SKILL.md",
+        });
+        return;
+      }
+      const lines = list.map(
+        (s) => `  /skill ${s.name}  [${s.source}]  ${s.description || "(无描述)"}`,
+      );
+      ctx.ui.emit({ type: "info", data: `可用 skill (${list.length}):\n${lines.join("\n")}` });
+      return;
+    }
+    if (name === "reload") {
+      const m = loadSkills();
+      ctx.ui.emit({ type: "info", data: `已重新加载 skill,共 ${m.size} 个` });
+      return;
+    }
+    const sk = getSkill(name);
+    if (!sk) {
+      ctx.ui.emit({ type: "error", data: `未找到 skill: ${name}(用 /skills 查看可用列表)` });
+      return;
+    }
+    const scriptList = sk.scripts.length
+      ? `\n可用脚本(可通过 execute_shell 调用以下绝对路径):\n${sk.scripts.map((p) => "- " + p).join("\n")}\n`
+      : "";
+    const allowedHint = sk.allowedTools?.length
+      ? `\n建议仅使用工具: ${sk.allowedTools.join(", ")}\n`
+      : "";
+    ctx.ui.emit({ type: "info", data: `[skill] 注入 ${sk.name} (${sk.source})` });
+    return `[skill: ${sk.name}] ${sk.description}${allowedHint}${scriptList}\n${sk.body}`;
   },
 });
 
