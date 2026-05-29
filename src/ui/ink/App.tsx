@@ -135,6 +135,7 @@ export function App(): React.ReactElement {
           ]);
           break;
         case "shellStart":
+          setBusy(true);
           setBlocks((b) => [
             ...b,
             { id: newBlockId(), role: "shell", text: `⚙ ${event.data.shell} $ ${event.data.cmd}` },
@@ -150,6 +151,7 @@ export function App(): React.ReactElement {
           break;
         }
         case "shellDone":
+          setBusy(false);
           break;
       }
     };

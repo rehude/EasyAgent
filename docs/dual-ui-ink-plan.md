@@ -4,8 +4,8 @@
 
 ## 目标
 
-- 保留当前稳定的 classic UI 行为，作为默认入口和回退方案。
-- 新增实验性的 Ink UI，不一次性重写 agent 核心逻辑。
+- 默认使用 Ink UI，保留 classic UI 作为显式兼容/回退入口。
+- 渐进增强 Ink UI，不一次性重写 agent 核心逻辑。
 - 将输入、输出、状态、工具调用展示从业务逻辑中抽离，形成可替换 UI backend。
 - 保持 JSONL 会话、工具调用闭环、`@path` 展开、`!cmd` shell、slash command 等现有能力。
 
@@ -14,7 +14,7 @@
 - 第一阶段不重写 LLM、tool registry、session 存储。
 - 第一阶段不追求完整富 Markdown 组件化渲染。
 - 第一阶段不移除 readline classic UI。
-- 不改变现有 npm 包主行为，Ink UI 先作为实验入口。
+- 默认 UI 已切换为 Ink；classic 仅作为兼容模式和非 TTY 回退。
 
 ## 总体策略
 
@@ -29,10 +29,10 @@
 
 - 当前代码已搭好 classic + Ink 双 UI 骨架。
 - `pnpm build` 已通过。
-- classic 仍是默认 UI。
+- Ink 已切换为默认 UI，classic 保留为 `--ui classic` 兼容模式。
 - Ink UI 已有实验入口、基础输入框、补全候选、消息区、状态区、流式输出区。
 - 本轮已修复 Ink MVP 的闭环问题：启动前事件丢失、普通回答不固化、用户消息不展示、Ctrl+C 输入挂起。
-- 尚未完成：完整外部 shell 暂停恢复、Markdown 精细化、完整人工回归。
+- 尚未完成：Markdown 精细化、完整人工回归、README 发布说明。
 
 ## 阶段 0：现状基线
 
@@ -97,13 +97,13 @@
 ## 阶段 2：CLI 入口选择 UI
 
 - [x] 新增启动参数解析：
-  - [x] 默认 `classic`
+  - [x] 默认 `ink`
   - [x] 支持 `--ui classic`
   - [x] 支持 `--ui ink`
 - [x] 新增 `src/ui/index.ts`，按参数创建对应 adapter。
 - [x] 当非 TTY 环境运行时，强制回退 classic 或 simple output。
 - [x] `-c` 继续会话逻辑保持不变。
-- [ ] 确认 `rehudex` 默认行为不变。
+- [x] 确认 `rehudex` 默认进入 Ink UI。
 
 ## 阶段 3：新增 Ink 依赖和编译配置
 
@@ -130,12 +130,12 @@
   - [x] 工具调用区
   - [x] 底部输入区
   - [x] 状态栏
-- [ ] 状态栏展示：
-  - [ ] session id
-  - [ ] token usage
-  - [ ] cwd
-  - [ ] 当前模型或 endpoint 简要信息
-  - [ ] busy / idle 状态
+- [x] 状态栏展示：
+  - [x] session id
+  - [x] token usage
+  - [x] cwd
+  - [x] 当前模型或 endpoint 简要信息
+  - [x] busy / idle 状态
 
 ### 4.2 输入框
 
@@ -159,7 +159,7 @@
 - [x] assistant delta 实时更新当前回复。
 - [x] 完成后固化为一条 assistant 消息。
 - [x] 工具调用以独立块展示。
-- [ ] token usage 更新到状态栏。
+- [x] token usage 更新到状态栏。
 
 ## 阶段 5：Ink 补全和附件体验
 
@@ -170,12 +170,12 @@
 - [x] 支持 Tab 接受候选。
 - [x] 支持上下键选择候选。
 - [x] 支持 Esc 关闭候选。
-- [ ] `@path` 展开结果在 UI 中显示附件提示。
+- [x] `@path` 展开结果在 UI 中显示附件提示。
 
 ## 阶段 6：外部程序和 shell 兼容
 
 - [x] 为 Ink adapter 实现 `suspend()` / `resume()`。
-- [ ] `!cmd` 执行时暂停 Ink 渲染。
+- [x] `!cmd` 执行时进入 shell busy 状态，结束后恢复渲染。
 - [x] shell stdout/stderr 结束后作为消息块写回 UI。
 - [x] `/edit` 打开外部编辑器前暂停 Ink 渲染。
 - [x] 外部编辑器返回后恢复 Ink 渲染。
@@ -215,12 +215,12 @@
 
 ## 阶段 9：发布策略
 
-- [ ] 初次发布保持 classic 为默认 UI。
+- [x] 初次发布改为 Ink 默认 UI。
 - [ ] README 中将 Ink 标记为 experimental。
 - [ ] 收集真实使用问题后再考虑默认切换。
 - [ ] 如果 Ink 稳定，再考虑：
-  - [ ] 默认使用 Ink
-  - [ ] `--ui classic` 作为兼容模式
+  - [x] 默认使用 Ink
+  - [x] `--ui classic` 作为兼容模式
   - [ ] 配置文件中持久化 UI 偏好
 
 ## 关键风险
@@ -245,6 +245,8 @@
 
 ## 变更记录
 
+- 2026-05-29：补上 Ink 状态栏完整信息；显示 session、tokens、cwd、model、endpoint 和 busy/idle 状态；`!cmd` 执行期间进入 shell busy 状态。
 - 2026-05-29：补上 Ink 输入补全候选；`/` 命令和 `@path` 文件路径可显示候选，支持 Tab 接受、上下键选择、Esc 关闭。
 - 2026-05-29：同步代码进度；双 UI 骨架、classic adapter、Ink MVP 雏形、CLI UI 参数、Ink 依赖和 TypeScript JSX 配置已完成。保留完整回归、Markdown 精细化等后续任务。
 - 2026-05-26：创建初版计划。
+- 2026-05-29：默认 UI 切换为 Ink；`--ui classic` 保留为显式兼容模式，非 TTY 环境仍回退 classic。

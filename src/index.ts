@@ -16,6 +16,7 @@ import { SessionStore } from "./session.js";
 import { getCommand, type CommandContext } from "./commands.js";
 import { buildCompleter, expandAtRefs } from "./completer.js";
 import { runShell, CURRENT_SHELL } from "./shellExec.js";
+import { CFG } from "./config.js";
 import { createUiAdapter, type UiType } from "./ui/index.js";
 import { setCurrentUi } from "./ui/current.js";
 import type OpenAI from "openai";
@@ -23,7 +24,7 @@ import type OpenAI from "openai";
 // 解析命令行参数
 function parseArgs(argv: string[]): { uiType: UiType; continueLast: boolean; help: boolean } {
   const args = argv.slice(2);
-  let uiType: UiType = "classic";
+  let uiType: UiType = "ink";
   let continueLast = false;
   let help = false;
 
@@ -56,13 +57,13 @@ function showHelp(): void {
   console.log("");
   console.log("选项:");
   console.log(`  -c, --continue       续接最后一个会话`);
-  console.log(`  --ui <type>          选择 UI (classic|ink, 默认 classic)`);
+  console.log(`  --ui <type>          选择 UI (ink|classic, 默认 ink)`);
   console.log(`  -h, --help           显示本帮助`);
   console.log("");
   console.log("示例:");
-  console.log(`  rehudex              启动新会话，使用 classic UI`);
-  console.log(`  rehudex -c           续接会话，使用 classic UI`);
-  console.log(`  rehudex --ui ink     启动新会话，使用 Ink UI (实验)`);
+  console.log(`  rehudex              启动新会话，使用 Ink UI`);
+  console.log(`  rehudex -c           续接会话，使用 Ink UI`);
+  console.log(`  rehudex --ui classic 启动新会话，使用 classic 兼容模式`);
 }
 
 const { uiType, continueLast, help } = parseArgs(process.argv);
@@ -126,10 +127,36 @@ if (continueLast) {
   history = [systemMsg];
   store.append(systemMsg);
 }
-ui.emit({ type: "status", data: `session: ${store.file}` });
-
 const sessionUsage = { prompt: 0, completion: 0, total: 0 };
 let closed = false;
+
+function shortCwd(): string {
+  const cwd = process.cwd();
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  return parts.length >= 2 ? `${parts.at(-2)}\\${parts.at(-1)}` : cwd;
+}
+
+function endpointLabel(): string {
+  try {
+    return new URL(CFG.baseURL).host;
+  } catch {
+    return CFG.baseURL;
+  }
+}
+
+function emitStatus(): void {
+  ui.emit({
+    type: "status",
+    data:
+      `session ${store.id.slice(0, 8)}` +
+      ` | tokens ${formatTok(sessionUsage.total) || "0"}` +
+      ` | cwd ${shortCwd()}` +
+      ` | model ${CFG.model}` +
+      ` | endpoint ${endpointLabel()}`,
+  });
+}
+
+emitStatus();
 
 const shutdown = async (code = 0) => {
   if (closed) return;
@@ -170,6 +197,7 @@ const cmdCtx: CommandContext = {
   setStore(s) {
     store = s;
     cmdCtx.store = s;
+    emitStatus();
   },
 };
 
@@ -208,6 +236,7 @@ async function processMessage(text: string): Promise<void> {
       type: "info",
       data: `(本轮 ${usage.total} / 累计 ${sessionUsage.total} tokens)`,
     });
+    emitStatus();
   }
 }
 
@@ -239,6 +268,7 @@ while (!closed) {
     const msg: OpenAI.ChatCompletionMessageParam = { role: "user", content: summary };
     history.push(msg);
     store.append(msg);
+    emitStatus();
     continue;
   }
 
@@ -259,6 +289,7 @@ while (!closed) {
     if (typeof result === "string" && result.trim()) {
       await processMessage(result);
     }
+    emitStatus();
     continue;
   }
 

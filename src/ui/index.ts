@@ -3,7 +3,7 @@ import { ClassicAdapter } from "./classic.js";
 
 export type UiType = "classic" | "ink";
 
-export async function createUiAdapter(type: UiType = "classic"): Promise<UiAdapter> {
+export async function createUiAdapter(type: UiType = "ink"): Promise<UiAdapter> {
   switch (type) {
     case "classic":
       return new ClassicAdapter();
